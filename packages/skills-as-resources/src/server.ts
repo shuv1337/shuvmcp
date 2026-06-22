@@ -56,6 +56,30 @@ interface LoadedSkill {
   files: SkillFileEntry[];
 }
 
+async function realContainedPath(
+  baseDir: string,
+  relPath: string,
+): Promise<string | null> {
+  const lexicalPath = safeJoin(baseDir, relPath);
+  if (!lexicalPath) return null;
+
+  let realBase: string;
+  let realTarget: string;
+  try {
+    [realBase, realTarget] = await Promise.all([
+      fs.realpath(baseDir),
+      fs.realpath(lexicalPath),
+    ]);
+  } catch {
+    return null;
+  }
+
+  if (realTarget !== realBase && !realTarget.startsWith(realBase + path.sep)) {
+    return null;
+  }
+  return realTarget;
+}
+
 export class SkillsProvider {
   private readonly skillDir?: string;
   private readonly roots: string[];
@@ -97,7 +121,8 @@ export class SkillsProvider {
       const name = path.basename(dir);
       if (skills.has(name)) continue; // first-wins de-dup (spec Appendix B)
 
-      const mainPath = path.join(dir, this.mainFileName);
+      const mainPath = await realContainedPath(dir, this.mainFileName);
+      if (!mainPath) continue;
       let content: string;
       try {
         content = await fs.readFile(mainPath, "utf-8");
@@ -194,7 +219,7 @@ export class SkillsProvider {
       return [{ uri, mimeType: "application/json", text: manifestJson(manifest) }];
     }
 
-    const abs = safeJoin(s.dir, parsed.fileRef);
+    const abs = await realContainedPath(s.dir, parsed.fileRef);
     if (!abs) return null;
     let stat;
     try {

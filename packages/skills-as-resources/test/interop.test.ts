@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
@@ -81,4 +81,39 @@ test("discovery works with a non-default main file (the SKILL.md-suffix bug fix)
 
   const manifest = await getSkillManifest(client, "custom");
   assert.equal(manifest.mainFile, "AGENT.md");
+});
+
+test("readResource enforces realpath containment for symlinked files", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skills-root-"));
+  const skillDir = path.join(root, "symlinked");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(path.join(skillDir, "SKILL.md"), "# Symlinked\n");
+  await writeFile(path.join(skillDir, "safe.txt"), "safe content\n");
+  await writeFile(path.join(root, "secret.txt"), "secret content\n");
+  await symlink(path.join(skillDir, "safe.txt"), path.join(skillDir, "safe-link.txt"));
+  await symlink(path.join(root, "secret.txt"), path.join(skillDir, "secret-link.txt"));
+
+  const provider = new SkillsProvider({ skillDir });
+  await provider.load();
+
+  const safeContents = await provider.readResource("skill://symlinked/safe-link.txt");
+  assert.equal(safeContents?.[0]?.text, "safe content\n");
+
+  const escapedContents = await provider.readResource("skill://symlinked/secret-link.txt");
+  assert.equal(escapedContents, null);
+});
+
+test("load ignores a skill whose main file resolves outside its directory", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skills-root-"));
+  const skillDir = path.join(root, "external-main");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(path.join(root, "SKILL.md"), "# External\n");
+  await symlink(path.join(root, "SKILL.md"), path.join(skillDir, "SKILL.md"));
+
+  const provider = new SkillsProvider({ skillDir });
+  await provider.load();
+  const client = await connect(provider);
+
+  const skills = await listSkills(client);
+  assert.equal(skills.length, 0);
 });
