@@ -16,6 +16,7 @@ class SkillFileInfo:
     path: str  # Relative path within skill directory
     size: int
     hash: str  # sha256 hash
+    executable: bool = False  # any execute bit set at the source (POSIX mode & 0o111)
 
 
 @dataclass
@@ -96,12 +97,14 @@ def scan_skill_files(skill_dir: Path) -> list[SkillFileInfo]:
                 continue
 
             rel_path = file_path.relative_to(skill_dir)
+            stat_result = resolved_file_path.stat()
             files.append(
                 SkillFileInfo(
                     # Use POSIX paths for cross-platform URI consistency
                     path=rel_path.as_posix(),
-                    size=resolved_file_path.stat().st_size,
+                    size=stat_result.st_size,
                     hash=compute_file_hash(resolved_file_path),
+                    executable=bool(stat_result.st_mode & 0o111),
                 )
             )
     return files

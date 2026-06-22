@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+import os
 from pathlib import Path
 from typing import cast
 
@@ -323,7 +325,11 @@ class TestDownloadSkill:
             }
         )
 
-        result = await download_skill(cast(Client, client), "malicious", tmp_path)
+        # verify=False: this test uses placeholder hashes and exercises only the
+        # path-traversal guard, not integrity verification.
+        result = await download_skill(
+            cast(Client, client), "malicious", tmp_path, verify=False
+        )
 
         assert (result / "SKILL.md").read_text() == "# Safe"
         assert not (tmp_path / "escape.txt").exists()
@@ -350,9 +356,94 @@ class TestDownloadSkill:
             }
         )
 
-        result = await download_skill(cast(Client, client), "binary", tmp_path)
+        # verify=False: placeholder hash; this test only covers blob writing.
+        result = await download_skill(
+            cast(Client, client), "binary", tmp_path, verify=False
+        )
 
         assert (result / "data.bin").read_bytes() == data
+
+
+class TestExecutableBit:
+    """Round-trip of the manifest `executable` field (spec §6.1)."""
+
+    @pytest.fixture
+    def exec_skill_server(self, tmp_path: Path) -> FastMCP:
+        skills = tmp_path / "skills"
+        skills.mkdir()
+        runner = skills / "runner"
+        runner.mkdir()
+        (runner / "SKILL.md").write_text("---\ndescription: Runner\n---\n\n# Runner\n")
+        (runner / "notes.md").write_text("# notes\n")
+        scripts = runner / "scripts"
+        scripts.mkdir()
+        script = scripts / "go.sh"
+        script.write_text("#!/usr/bin/env bash\necho hi\n")
+        script.chmod(0o755)
+        mcp = FastMCP("Exec Skills")
+        mcp.add_provider(SkillsDirectoryProvider(roots=skills))
+        return mcp
+
+    async def test_manifest_flags_executable_files(self, exec_skill_server: FastMCP):
+        async with Client(exec_skill_server) as client:
+            manifest = await get_skill_manifest(client, "runner")
+        by_path = {f.path: f for f in manifest.files}
+        assert by_path["scripts/go.sh"].executable is True
+        assert by_path["SKILL.md"].executable is False
+        assert by_path["notes.md"].executable is False
+
+    async def test_download_restores_executable_bit(
+        self, exec_skill_server: FastMCP, tmp_path: Path
+    ):
+        target = tmp_path / "out"
+        target.mkdir()
+        async with Client(exec_skill_server) as client:
+            result = await download_skill(client, "runner", target)
+        script = result / "scripts" / "go.sh"
+        assert script.exists()
+        assert os.access(script, os.X_OK), "executable bit not restored"
+        assert not os.access(result / "SKILL.md", os.X_OK)
+
+
+class TestDownloadVerification:
+    """Hash verification in download_skill (spec §6)."""
+
+    async def test_verify_raises_on_hash_mismatch(self, tmp_path: Path):
+        data = b"real content"
+        manifest = {
+            "skill": "x",
+            "files": [
+                {"path": "a.bin", "size": len(data), "hash": "sha256:" + "0" * 64}
+            ],
+        }
+        client = FakeResourceReader(
+            {
+                "skill://x/_manifest": [
+                    text_resource("skill://x/_manifest", json.dumps(manifest))
+                ],
+                "skill://x/a.bin": [blob_resource("skill://x/a.bin", data)],
+            }
+        )
+        with pytest.raises(ValueError, match="hash mismatch"):
+            await download_skill(cast(Client, client), "x", tmp_path)
+
+    async def test_verify_passes_with_correct_hash(self, tmp_path: Path):
+        data = b"real content"
+        good = "sha256:" + hashlib.sha256(data).hexdigest()
+        manifest = {
+            "skill": "y",
+            "files": [{"path": "a.bin", "size": len(data), "hash": good}],
+        }
+        client = FakeResourceReader(
+            {
+                "skill://y/_manifest": [
+                    text_resource("skill://y/_manifest", json.dumps(manifest))
+                ],
+                "skill://y/a.bin": [blob_resource("skill://y/a.bin", data)],
+            }
+        )
+        result = await download_skill(cast(Client, client), "y", tmp_path)
+        assert (result / "a.bin").read_bytes() == data
 
 
 class TestSyncSkills:

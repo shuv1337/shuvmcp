@@ -148,7 +148,7 @@ The manifest served at `skill://{name}/_manifest` is a JSON object:
   "files": [
     { "path": "SKILL.md",            "size": 1843, "hash": "sha256:9f86d0…" },
     { "path": "reference.md",        "size":  920, "hash": "sha256:2c2624…" },
-    { "path": "scripts/extract.py",  "size": 4096, "hash": "sha256:18ac34…" }
+    { "path": "scripts/extract.py",  "size": 4096, "hash": "sha256:18ac34…", "executable": true }
   ]
 }
 ```
@@ -165,6 +165,13 @@ Normative field rules:
   - `hash` (string, REQUIRED) — content hash as `"<alg>:<lowercase-hex>"`. Implementations
     MUST emit `sha256:` and MUST be able to verify `sha256:`; other algorithms MAY be added
     but MUST carry the `<alg>:` prefix. The hash is over the file's raw bytes.
+  - `executable` (boolean, OPTIONAL) — `true` if the file carries an execute permission at
+    the source (any of owner/group/other execute bits). Absent or `false` means a regular,
+    non-executable file. The MCP wire format cannot otherwise carry POSIX mode, so a skill's
+    runnable scripts (e.g. `scripts/extract.py`) would land non-executable without this hint.
+    A client that materializes files SHOULD restore the executable bit when `executable` is
+    `true` (see [§9](#9-client-operations)); a client MAY ignore it (e.g. on Windows). Servers
+    SHOULD omit the field for non-executable files to keep manifests compact.
 - `files` SHOULD be emitted in a deterministic order. Sorting by `path` is RECOMMENDED for
   diff-friendly output; the FastMCP reference instead emits filesystem-traversal order
   (`sorted(rglob("*"))`), which usually but not always coincides. Clients MUST NOT rely on
@@ -227,7 +234,9 @@ A conforming client SHOULD provide:
 - **manifest** — read and parse `skill://{name}/_manifest` into `{ skill, mainFile, files }`.
 - **download** — given a skill name and a target directory, read the manifest, then read each
   `files[*]` entry via `skill://{name}/{path}` and write it under `{target}/{name}/{path}`,
-  creating parent directories. Clients SHOULD verify hashes ([§6](#6-content-transfer-and-encoding)).
+  creating parent directories. Clients SHOULD verify hashes ([§6](#6-content-transfer-and-encoding))
+  and SHOULD restore the executable bit for entries with `executable: true` ([§6.1](#61-manifest-object))
+  so a skill's scripts are runnable after download.
 - **sync** — download every discovered skill.
 
 ### 9.1 Path-traversal safety (normative)
