@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,7 @@ class SkillFile:
     path: str
     size: int
     hash: str
+    executable: bool = False
 
 
 @dataclass
@@ -116,7 +118,12 @@ async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
         return SkillManifest(
             name=manifest_data["skill"],
             files=[
-                SkillFile(path=f["path"], size=f["size"], hash=f["hash"])
+                SkillFile(
+                    path=f["path"],
+                    size=f["size"],
+                    hash=f["hash"],
+                    executable=bool(f.get("executable", False)),
+                )
                 for f in manifest_data["files"]
             ],
         )
@@ -130,10 +137,13 @@ async def download_skill(
     target_dir: str | Path,
     *,
     overwrite: bool = False,
+    verify: bool = True,
 ) -> Path:
     """Download a skill and all its files to a local directory.
 
-    Creates a subdirectory named after the skill containing all files.
+    Creates a subdirectory named after the skill containing all files. Restores
+    the executable bit for files the manifest marks ``executable`` (spec §6.1),
+    so a skill's scripts are runnable after download.
 
     Args:
         client: Connected FastMCP client
@@ -141,12 +151,16 @@ async def download_skill(
         target_dir: Directory where skill folder will be created
         overwrite: If True, overwrite existing skill directory. If False
             (default), raise FileExistsError if directory exists.
+        verify: If True (default), verify each file's SHA-256 against the
+            manifest hash before keeping it and raise on mismatch (spec §6).
+            A server that serves text files in text mode may newline-translate
+            them; serve such files as binary blobs for byte-exact integrity.
 
     Returns:
         Path to the downloaded skill directory
 
     Raises:
-        ValueError: If skill cannot be found or downloaded
+        ValueError: If skill cannot be found/downloaded, or a hash mismatches
         FileExistsError: If skill directory exists and overwrite=False
 
     Example:
@@ -200,17 +214,33 @@ async def download_skill(
 
         content = result[0]
 
-        # Create parent directories if needed
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write content
+        # Resolve the exact bytes to persist (verify against the manifest hash)
         if isinstance(content, mcp.types.TextResourceContents):
-            file_path.write_text(content.text)
+            data = content.text.encode("utf-8")
         elif isinstance(content, mcp.types.BlobResourceContents):
-            file_path.write_bytes(base64.b64decode(content.blob))
+            data = base64.b64decode(content.blob)
         else:
             # Skip unknown content types
             continue
+
+        # Integrity: verify SHA-256 of the bytes we persist (spec §6).
+        if verify and file_info.hash.startswith("sha256:"):
+            actual = "sha256:" + hashlib.sha256(data).hexdigest()
+            if actual != file_info.hash:
+                raise ValueError(
+                    f"hash mismatch for {skill_name}/{file_info.path}: manifest "
+                    f"{file_info.hash}, got {actual}. If this is a text file, the "
+                    f"server may be newline-translating it; serve it as a binary "
+                    f"blob for byte-exact integrity (spec §6)."
+                )
+
+        # Create parent directories and write
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(data)
+
+        # Restore the executable bit when the manifest flags it (spec §6.1)
+        if file_info.executable:
+            file_path.chmod(file_path.stat().st_mode | 0o111)
 
     return skill_dir
 

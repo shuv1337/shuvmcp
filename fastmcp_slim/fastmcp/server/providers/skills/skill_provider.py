@@ -60,7 +60,10 @@ class SkillResource(Resource):
         manifest = {
             "skill": self.skill_info.name,
             "files": [
+                # `executable` is omitted for regular files to keep manifests compact
+                # (spec §6.1); parsers treat an absent field as False.
                 {"path": f.path, "size": f.size, "hash": f.hash}
+                | ({"executable": True} if f.executable else {})
                 for f in self.skill_info.files
             ],
         }

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hello widget</title>
+    <style>
+      /* Theme from the host's CSS variables (MCP Apps) with standalone fallbacks. */
+      :root {
+        --bg: var(--color-background-primary, #ffffff);
+        --bg-2: var(--color-background-secondary, #f5f5f7);
+        --fg: var(--color-text-primary, #18181b);
+        --fg-2: var(--color-text-secondary, #71717a);
+        --border: var(--color-border-primary, #e4e4e7);
+        --accent: var(--color-background-info, #2563eb);
+        --radius: var(--border-radius-lg, 14px);
+        --font: var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: var(--font);
+        color: var(--fg);
+        background: transparent;
+        padding: 12px;
+      }
+      .card {
+        max-width: 420px;
+        margin: 0 auto;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px 22px;
+        box-shadow: var(--shadow-md, 0 1px 3px rgba(0, 0, 0, 0.08));
+      }
+      .banner {
+        font-size: 12px;
+        color: var(--fg-2);
+        background: var(--bg-2);
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        margin-bottom: 14px;
+      }
+      .avatar { font-size: 40px; line-height: 1; }
+      h1 { font-size: 22px; margin: 10px 0 2px; font-weight: 650; }
+      .sub { color: var(--fg-2); font-size: 13px; margin: 0 0 16px; }
+      .reactions { display: flex; gap: 8px; }
+      button.reaction {
+        flex: 1;
+        font: inherit;
+        font-size: 16px;
+        cursor: pointer;
+        background: var(--bg-2);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 0;
+        transition: transform 0.05s ease, border-color 0.15s ease;
+      }
+      button.reaction:hover { border-color: var(--accent); }
+      button.reaction:active { transform: scale(0.96); }
+      .count {
+        display: inline-block;
+        min-width: 18px;
+        margin-left: 4px;
+        font-variant-numeric: tabular-nums;
+        color: var(--fg-2);
+        font-size: 13px;
+      }
+      .status { margin-top: 14px; font-size: 12px; color: var(--fg-2); min-height: 16px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div id="banner" class="banner" hidden>
+        Preview mode — open this view inside an MCP Apps host (Claude, ChatGPT, Goose, VS
+        Code) to talk to the server. Clicks tally locally here.
+      </div>
+      <div class="avatar">👋</div>
+      <h1>Hello, <span id="name">world</span>!</h1>
+      <p class="sub">A native MCP Apps widget — the TypeScript analog of a FastMCP Prefab app.</p>
+      <div class="reactions">
+        <button class="reaction" data-reaction="👍">👍 <span class="count" data-count="👍">0</span></button>
+        <button class="reaction" data-reaction="🎉">🎉 <span class="count" data-count="🎉">0</span></button>
+        <button class="reaction" data-reaction="❤️">❤️ <span class="count" data-count="❤️">0</span></button>
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <script type="module">
+      const REACTIONS = ["👍", "🎉", "❤️"];
+      const state = { name: "world", reactions: {} };
+      const byId = (id) => document.getElementById(id);
+      const status = (t) => (byId("status").textContent = t);
+
+      function render() {
+        byId("name").textContent = state.name;
+        for (const r of REACTIONS) {
+          const el = document.querySelector(`.count[data-count="${r}"]`);
+          if (el) el.textContent = String(state.reactions[r] ?? 0);
+        }
+      }
+
+      // A tool result (or the notification params wrapping it) may arrive in a few
+      // shapes depending on host; read defensively.
+      function applyResult(payload) {
+        const result = payload?.result ?? payload ?? {};
+        const data = result?.structuredContent ?? result ?? {};
+        if (typeof data.name === "string") state.name = data.name;
+        if (data.reactions && typeof data.reactions === "object") {
+          state.reactions = data.reactions;
+        }
+        render();
+      }
+
+      // In a host, this view is iframed (window.parent !== window). Opened directly in
+      // a browser it is top-level — fall back to a local preview so it still renders.
+      const inHost = window.parent !== window;
+      let app = null;
+
+      if (inHost) {
+        try {
+          const { App } = await import(
+            "https://esm.sh/@modelcontextprotocol/ext-apps@1.7.4/app-with-deps"
+          );
+          app = new App({ name: "hello-widget", version: "0.1.0" });
+          // Host pushes the model's tool arguments, then the tool's result.
+          app.ontoolinput = (params) => {
+            const args = params?.arguments ?? params ?? {};
+            if (typeof args.name === "string") {
+              state.name = args.name;
+              render();
+            }
+          };
+          app.ontoolresult = (params) => applyResult(params);
+          await app.connect();
+          status("Connected to host.");
+        } catch (err) {
+          byId("banner").hidden = false;
+          status("Host bridge unavailable — preview mode.");
+        }
+      } else {
+        byId("banner").hidden = false;
+        status("Preview mode.");
+      }
+
+      for (const btn of document.querySelectorAll("button.reaction")) {
+        btn.addEventListener("click", async () => {
+          const reaction = btn.dataset.reaction;
+          if (app) {
+            try {
+              // Call a backend tool on the server, proxied through the host.
+              const res = await app.callServerTool({
+                name: "record_reaction",
+                arguments: { reaction },
+              });
+              applyResult(res);
+              status(`Sent ${reaction} to the server.`);
+            } catch (err) {
+              status(`Call failed: ${err?.message ?? err}`);
+            }
+          } else {
+            state.reactions[reaction] = (state.reactions[reaction] ?? 0) + 1;
+            render();
+          }
+        });
+      }
+
+      render();
+    </script>
+  </body>
+</html>
