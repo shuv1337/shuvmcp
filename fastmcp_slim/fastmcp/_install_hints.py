@@ -1,20 +1,20 @@
 CLIENT_SUPPORT = (
     "FastMCP client support is not installed. Install `fastmcp` or "
-    "`fastmcp-slim[client]`."
+    "`shuvmcp[client]`."
 )
 
 SERVER_SUPPORT = (
     "FastMCP server support is not installed. Install `fastmcp` or "
-    "`fastmcp-slim[server]`."
+    "`shuvmcp[server]`."
 )
 
 APP_SUPPORT = (
     "FastMCP app support is not installed. Install `fastmcp[apps]` or "
-    "`fastmcp-slim[server,apps]`."
+    "`shuvmcp[server,apps]`."
 )
 
 CLI_SUPPORT = (
-    "FastMCP CLI support is not installed. Install `fastmcp` or `fastmcp-slim[server]`."
+    "FastMCP CLI support is not installed. Install `fastmcp` or `shuvmcp[server]`."
 )
 
 

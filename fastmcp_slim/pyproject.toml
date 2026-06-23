@@ -1,8 +1,8 @@
 [project]
-name = "fastmcp-slim"
+name = "shuvmcp"
 dynamic = ["version", "optional-dependencies"]
-description = "The dependency-slim FastMCP package."
-authors = [{ name = "Jeremiah Lowin" }]
+description = "A fork of the dependency-slim FastMCP package, adding per-file executable bits and sha256 verification to Skills-as-Resources delivery."
+authors = [{ name = "shuv" }, { name = "Jeremiah Lowin" }]
 dependencies = [
     "platformdirs>=4.0.0",
     "pydantic[email]>=2.11.7",
@@ -37,8 +37,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://gofastmcp.com"
-Repository = "https://github.com/PrefectHQ/fastmcp"
+Homepage = "https://github.com/shuv1337/shuvmcp"
+Repository = "https://github.com/shuv1337/shuvmcp"
+Upstream = "https://github.com/PrefectHQ/fastmcp"
 Documentation = "https://gofastmcp.com"
 
 [project.scripts]
@@ -69,7 +70,7 @@ apps = ["prefab-ui>=0.18.0"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
 client = [
-    "fastmcp-slim[mcp]=={{ version }}",
+    "shuvmcp[mcp]=={{ version }}",
     "authlib>=1.6.11",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
 ]
@@ -86,7 +87,7 @@ mcp = [
 ]
 openai = ["openai>=1.102.0"]
 server = [
-    "fastmcp-slim[mcp]=={{ version }}",
+    "shuvmcp[mcp]=={{ version }}",
     "authlib>=1.6.11",
     "cyclopts>=4.0.0",
     "griffelib>=2.0.0",

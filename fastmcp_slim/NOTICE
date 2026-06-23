@@ -1,0 +1,17 @@
+shuvmcp
+Copyright shuv
+
+This product is a fork of FastMCP (the dependency-slim `fastmcp-slim`
+distribution), Copyright Prefect Technologies, Inc. and contributors,
+licensed under the Apache License, Version 2.0.
+
+Upstream: https://github.com/PrefectHQ/fastmcp
+
+Modifications in this fork (relative to fastmcp-slim 3.4.2):
+  - Skills-as-Resources manifests carry an optional per-file `executable`
+    boolean, computed from the file mode (st_mode & 0o111).
+  - The client `download_skill` restores the executable bit on materialized
+    files and verifies each file's sha256 against the manifest.
+
+The import package name remains `fastmcp` for drop-in compatibility; only the
+distribution (PyPI) name differs (`shuvmcp`).

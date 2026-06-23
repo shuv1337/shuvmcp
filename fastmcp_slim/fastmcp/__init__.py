@@ -25,10 +25,16 @@ if settings.log_enabled:
         enable_rich_tracebacks=settings.enable_rich_tracebacks,
     )
 
-try:
-    __version__ = _version("fastmcp-slim")
-except PackageNotFoundError:
-    __version__ = _version("fastmcp")
+# Resolve our own version by distribution name. This package is published as
+# `shuvmcp`; the `fastmcp-slim`/`fastmcp` names are kept as fallbacks for
+# editable/source checkouts so `import fastmcp` never crashes on metadata.
+__version__ = "0.0.0"
+for _dist_name in ("shuvmcp", "fastmcp-slim", "fastmcp"):
+    try:
+        __version__ = _version(_dist_name)
+        break
+    except PackageNotFoundError:
+        continue
 
 if settings.deprecation_warnings:
     try:
